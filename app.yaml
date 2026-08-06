@@ -1,0 +1,13 @@
+command:
+  - uv
+  - run
+  - streamlit
+  - run
+  - src/app.py
+  - --server.port=8000
+  - --server.address=0.0.0.0
+
+env:
+  - name: DATABASE_URL
+    valueFrom: secret
+    secret: support-ticket-database-url
