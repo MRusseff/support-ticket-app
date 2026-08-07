@@ -22,31 +22,29 @@ def get_database_url() -> str:
 
 
 def get_connection():
-    """Create a database connection, handling connection string formats properly."""
+    """Create a database connection.
+    
+    Psycopg3 requires query parameters to be passed as keyword arguments,
+    not in the URI query string format.
+    """
     database_url = get_database_url()
     
-    # psycopg3 requires proper handling of query parameters
-    # Convert ?sslmode=require format to proper conninfo format
+    # Check if there are query parameters in the URL
     if "?" in database_url:
-        # Split base URL and query params
+        # Split base URL and query parameters
         base_url, query_string = database_url.split("?", 1)
         
-        # Parse query parameters and add them as conninfo parameters
+        # Parse query parameters into a dict
         params = {}
         for param in query_string.split("&"):
             if "=" in param:
                 key, value = param.split("=", 1)
                 params[key] = value
         
-        # Build conninfo string with proper formatting
-        conninfo = base_url
-        if params:
-            # Add parameters in the format psycopg3 expects
-            param_str = " ".join(f"{k}={v}" for k, v in params.items())
-            conninfo = f"{base_url} {param_str}"
-        
-        return connect(conninfo, autocommit=False)
+        # Pass base URL as conninfo and query params as keyword arguments
+        return connect(base_url, autocommit=False, **params)
     else:
+        # No query parameters, pass URL directly
         return connect(database_url, autocommit=False)
 
 
