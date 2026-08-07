@@ -18,12 +18,32 @@ def get_connection():
     
     Psycopg3 requires query parameters (like sslmode=require) to be passed
     as keyword arguments, not in the URI query string.
+    
+    Handles base64-encoded secrets (Databricks automatically encodes them).
     """
+    import base64
+    
     database_url = os.getenv("DATABASE_URL", "").strip()
     if not database_url:
         raise RuntimeError(
             "DATABASE_URL is not set. "
             "Set it in .env for local dev or configure the Databricks secret for deployment."
+        )
+    
+    # Databricks Secrets API returns base64-encoded values
+    # Check if it needs decoding
+    if not database_url.startswith("postgresql://"):
+        try:
+            database_url = base64.b64decode(database_url).decode("utf-8")
+        except Exception:
+            # If decode fails, use as-is (might be plain text)
+            pass
+    
+    # Validate the connection string format
+    if not database_url.startswith("postgresql://"):
+        raise RuntimeError(
+            f"Invalid DATABASE_URL format. Must start with 'postgresql://'. "
+            f"Got: {database_url[:50]}..."
         )
     
     # Parse query parameters if present
