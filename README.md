@@ -54,23 +54,34 @@ DATABASE_URL=postgresql://<user>:<password>@<host>:<port>/<database>?sslmode=req
 uv sync
 ```
 
-## 3) Create schema and seed sample data
+## 3) Run locally
 
 ```bash
-uv run --env-file .env -- python -m scripts.init_db
-uv run --env-file .env -- python -m scripts.seed_db
+uv run --env-file .env -- streamlit run src/app.py
 ```
 
-Sample data includes:
+## 4) Set up Databricks secrets
 
-- 3 support tickets
-- 2 messages per ticket
-- statuses across at least two values (`open`, `in_progress`, `resolved`)
-
-## 4) Run locally
+Before deploying the app, create a secret to store your Lakebase connection URL:
 
 ```bash
-uv run --env-file .env -- streamlit run support_ticket_app/app.py
+# Install dev dependencies (includes databricks-sdk)
+uv sync --dev
+
+# Run the setup script
+uv run python src/setup_secrets.py
+```
+
+This creates:
+* Secret scope: `support-tickets`
+* Secret key: `support-ticket-database-url`
+* ACL: `users` group with READ permission
+
+Alternatively, you can create the secret manually:
+```bash
+databricks secrets create-scope support-tickets
+databricks secrets put-secret support-tickets support-ticket-database-url --string-value "<your-database-url>"
+databricks secrets put-acl support-tickets users READ
 ```
 
 ## 5) Deploy with Databricks Apps
@@ -78,10 +89,9 @@ uv run --env-file .env -- streamlit run support_ticket_app/app.py
 1. Commit/push this project to your repo.
 2. In Databricks, create a new App from this repository.
 3. Ensure `app.yaml` is detected.
-4. Create a secret named `support-ticket-database-url` containing your `DATABASE_URL` value.
-5. Deploy the app.
+4. Deploy the app (the secret will be automatically injected as the `DATABASE_URL` environment variable).
 
-Example Databricks CLI flow (adjust paths/names to your workspace):
+Example Databricks CLI flow:
 
 ```bash
 databricks apps create support-ticket-app --description "Support ticket app"
@@ -103,20 +113,14 @@ databricks apps deploy support-ticket-app --source .
 ├── app.yaml
 ├── pyproject.toml
 ├── README.md
-├── sql
-│   ├── 001_create_schema.sql
-│   └── 002_seed_data.sql
-├── scripts
-│   ├── init_db.py
-│   └── seed_db.py
-└── support_ticket_app
+├── .env.example
+└── src
     ├── app.py
     ├── db.py
-    └── __init__.py
+    └── setup_secrets.py
 ```
 
 ## Notes
 
-- The app uses parameterized SQL queries for inserts/updates.
 - `ticket_messages.ticket_id` is enforced via a foreign key.
 - `ON DELETE CASCADE` is enabled for message cleanup if tickets are deleted in future enhancements.

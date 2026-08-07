@@ -20,6 +20,7 @@ packages = ["src"]
 [tool.uv]
 dev-dependencies = [
   "ruff>=0.6.0",
+  "databricks-sdk>=0.23.0",
 ]
 
 [tool.ruff]

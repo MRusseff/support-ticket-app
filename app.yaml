@@ -10,4 +10,4 @@ command:
 env:
   - name: DATABASE_URL
     valueFrom: secret
-    secret: support-ticket-database-url
+    secret: support-tickets/support-ticket-database-url

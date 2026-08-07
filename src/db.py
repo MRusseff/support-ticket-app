@@ -22,7 +22,32 @@ def get_database_url() -> str:
 
 
 def get_connection():
-    return connect(get_database_url(), autocommit=False)
+    """Create a database connection, handling connection string formats properly."""
+    database_url = get_database_url()
+    
+    # psycopg3 requires proper handling of query parameters
+    # Convert ?sslmode=require format to proper conninfo format
+    if "?" in database_url:
+        # Split base URL and query params
+        base_url, query_string = database_url.split("?", 1)
+        
+        # Parse query parameters and add them as conninfo parameters
+        params = {}
+        for param in query_string.split("&"):
+            if "=" in param:
+                key, value = param.split("=", 1)
+                params[key] = value
+        
+        # Build conninfo string with proper formatting
+        conninfo = base_url
+        if params:
+            # Add parameters in the format psycopg3 expects
+            param_str = " ".join(f"{k}={v}" for k, v in params.items())
+            conninfo = f"{base_url} {param_str}"
+        
+        return connect(conninfo, autocommit=False)
+    else:
+        return connect(database_url, autocommit=False)
 
 
 def execute_sql_script(script_path: Path) -> None:
