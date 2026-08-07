@@ -1,126 +1,166 @@
-# Support Ticket App (Databricks + Lakebase)
+# Support Ticket App
 
-This project is a small internal support system built as a Databricks App. It stores all operational data in Lakebase.
+**Day 1 Homework: Build a Lakebase-Powered AI Support App**
 
-## Features implemented
+A simple internal support ticket system built with Streamlit and Lakebase (Postgres).
 
-- View all support tickets
-- Filter tickets by status (`open`, `in_progress`, `resolved`)
-- Select a ticket and view its messages
-- Create a new ticket
-- Add a message to an existing ticket
-- Update a ticket status
-- Ticket statistics by status
-- Input validation and user-friendly error messages
-- Priority field (`low`, `medium`, `high`)
+## 📋 Features
 
-## Data model
+* View all support tickets
+* Filter tickets by status (open, in progress, resolved)
+* Create new tickets
+* Add messages to tickets
+* Real-time ticket statistics dashboard
 
-### `tickets`
+## 🗄️ Database Schema
 
-- `ticket_id` (PK)
-- `title`
-- `status`
-- `priority`
-- `created_by`
-- `created_at`
-
-### `ticket_messages`
-
-- `message_id` (PK)
-- `ticket_id` (FK -> `tickets.ticket_id`)
-- `message_text`
-- `author`
-- `created_at`
-
-## Prerequisites
-
-- Python 3.11+
-- [uv](https://docs.astral.sh/uv/)
-- Access to a Lakebase database with a Postgres-compatible connection string
-- Databricks workspace with Databricks Apps enabled
-
-## 1) Configure environment
-
-Copy `.env.example` to `.env` and set your Lakebase connection string:
-
-```env
-DATABASE_URL=postgresql://<user>:<password>@<host>:<port>/<database>?sslmode=require
+### `tickets` table
+```sql
+ticket_id    SERIAL PRIMARY KEY
+title        VARCHAR(255) NOT NULL
+status       VARCHAR(50) CHECK (status IN ('open', 'in_progress', 'resolved'))
+created_by   VARCHAR(100) NOT NULL
+created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ```
 
-## 2) Install dependencies (uv)
+### `ticket_messages` table
+```sql
+message_id   SERIAL PRIMARY KEY
+ticket_id    INTEGER REFERENCES tickets(ticket_id) ON DELETE CASCADE
+message_text TEXT NOT NULL
+author       VARCHAR(100) NOT NULL
+created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+```
+
+## 🚀 Setup Instructions
+
+### Prerequisites
+
+* Python 3.11+
+* [uv](https://docs.astral.sh/uv/) package manager
+* Lakebase Postgres database
+* Databricks workspace (for deployment)
+
+### 1. Install Dependencies
 
 ```bash
+cd support-ticket-app
 uv sync
 ```
 
-## 3) Run locally
+### 2. Set Up Database
+
+Run the schema and sample data scripts on your Lakebase database:
+
+```bash
+# Using psql
+psql "$DATABASE_URL" < sql/schema.sql
+psql "$DATABASE_URL" < sql/sample_data.sql
+```
+
+Or manually run the SQL files using a database client.
+
+### 3. Configure Environment
+
+Create a `.env` file with your database connection:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and add your Lakebase connection string:
+
+```env
+DATABASE_URL=postgresql://user@host:port/database?sslmode=require
+```
+
+**Important:** For psycopg3 compatibility, use the format shown above. Query parameters like `?sslmode=require` are automatically parsed.
+
+### 4. Run Locally
 
 ```bash
 uv run --env-file .env -- streamlit run src/app.py
 ```
 
-## 4) Set up Databricks secrets
+The app will open in your browser at `http://localhost:8501`
 
-Before deploying the app, create a secret to store your Lakebase connection URL:
+## 🔐 Deploy to Databricks Apps
+
+### 1. Set Up Databricks Secret
+
+Store your database connection string in Databricks:
 
 ```bash
-# Install dev dependencies (includes databricks-sdk)
-uv sync --dev
-
-# Run the setup script
+# Using the setup script
 uv run python src/setup_secrets.py
-```
 
-This creates:
-* Secret scope: `support-tickets`
-* Secret key: `support-ticket-database-url`
-* ACL: `users` group with READ permission
-
-Alternatively, you can create the secret manually:
-```bash
+# Or manually
 databricks secrets create-scope support-tickets
-databricks secrets put-secret support-tickets support-ticket-database-url --string-value "<your-database-url>"
+databricks secrets put-secret support-tickets support-ticket-database-url
 databricks secrets put-acl support-tickets users READ
 ```
 
-## 5) Deploy with Databricks Apps
-
-1. Commit/push this project to your repo.
-2. In Databricks, create a new App from this repository.
-3. Ensure `app.yaml` is detected.
-4. Deploy the app (the secret will be automatically injected as the `DATABASE_URL` environment variable).
-
-Example Databricks CLI flow:
+### 2. Deploy the App
 
 ```bash
-databricks apps create support-ticket-app --description "Support ticket app"
-databricks apps deploy support-ticket-app --source .
+databricks apps create support-ticket-app --description "Support ticket system"
+databricks apps deploy support-ticket-app --source-path .
 ```
 
-## 6) Test checklist after deployment
+Or deploy through the Databricks UI:
 
-- Existing tickets load from Lakebase on app start.
-- Creating a new ticket succeeds.
-- Adding a message to an existing ticket succeeds.
-- Updating ticket status succeeds.
-- Refreshing the app preserves all changes.
+1. Go to **Apps** in your Databricks workspace
+2. Click **Create App**
+3. Connect to this repository
+4. Select `app.yaml`
+5. Deploy
 
-## Project layout
+## 📁 Project Structure
 
-```text
-.
-├── app.yaml
-├── pyproject.toml
+```
+support-ticket-app/
+├── app.yaml                 # Databricks App configuration
+├── pyproject.toml           # Python dependencies
+├── .env.example             # Environment template
 ├── README.md
-├── .env.example
-└── src
-    ├── app.py
-    ├── db.py
-    └── setup_secrets.py
+├── sql/
+│   ├── schema.sql           # Database schema
+│   └── sample_data.sql      # Sample tickets and messages
+└── src/
+    ├── app.py               # Streamlit application
+    ├── db.py                # Database operations
+    └── setup_secrets.py     # Secret configuration script
 ```
 
-## Notes
+## ✅ Sample Data
 
-- `ticket_messages.ticket_id` is enforced via a foreign key.
-- `ON DELETE CASCADE` is enabled for message cleanup if tickets are deleted in future enhancements.
+The `sql/sample_data.sql` file includes:
+
+* **4 sample tickets** with varying statuses
+* **2+ messages per ticket** showing conversation threads
+* Realistic support scenarios (login issues, dashboard errors, etc.)
+
+## 🔧 Troubleshooting
+
+### Connection Errors
+
+If you see `extra key/value separator` errors:
+
+* The app automatically handles psycopg3's requirement to pass query parameters as kwargs
+* Ensure your `DATABASE_URL` is NOT base64 encoded
+* Format: `postgresql://user@host/db?sslmode=require`
+
+### Secret Issues
+
+If the deployed app can't connect:
+
+* Verify the secret exists: `databricks secrets list-secrets support-tickets`
+* Check the secret value is correct (not base64 encoded)
+* Ensure `app.yaml` references: `support-tickets/support-ticket-database-url`
+
+## 📝 Notes
+
+* All timestamps are in UTC
+* Foreign key constraints ensure referential integrity
+* `ON DELETE CASCADE` automatically removes messages when tickets are deleted
+* The app uses Streamlit's session state for UI interactions

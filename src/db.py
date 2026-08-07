@@ -1,9 +1,9 @@
-from __future__ import annotations
+"""Database operations for the Support Ticket App.
 
+Handles all interactions with the Lakebase Postgres database.
+"""
 import os
-from pathlib import Path
 from typing import Any
-
 from dotenv import load_dotenv
 from psycopg import connect
 from psycopg.rows import dict_row
@@ -11,80 +11,59 @@ from psycopg.rows import dict_row
 load_dotenv()
 
 VALID_STATUSES = ["open", "in_progress", "resolved"]
-VALID_PRIORITIES = ["low", "medium", "high"]
-
-
-def get_database_url() -> str:
-    database_url = os.getenv("DATABASE_URL", "").strip()
-    if not database_url:
-        raise RuntimeError("DATABASE_URL is not set. Configure it in environment variables.")
-    return database_url
 
 
 def get_connection():
-    """Create a database connection.
+    """Create a database connection to Lakebase.
     
-    Psycopg3 requires query parameters to be passed as keyword arguments,
-    not in the URI query string format.
+    Psycopg3 requires query parameters (like sslmode=require) to be passed
+    as keyword arguments, not in the URI query string.
     """
-    database_url = get_database_url()
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    if not database_url:
+        raise RuntimeError(
+            "DATABASE_URL is not set. "
+            "Set it in .env for local dev or configure the Databricks secret for deployment."
+        )
     
-    # Check if there are query parameters in the URL
+    # Parse query parameters if present
     if "?" in database_url:
-        # Split base URL and query parameters
         base_url, query_string = database_url.split("?", 1)
-        
-        # Parse query parameters into a dict
-        params = {}
-        for param in query_string.split("&"):
-            if "=" in param:
-                key, value = param.split("=", 1)
-                params[key] = value
-        
-        # Pass base URL as conninfo and query params as keyword arguments
+        params = dict(param.split("=", 1) for param in query_string.split("&") if "=" in param)
         return connect(base_url, autocommit=False, **params)
     else:
-        # No query parameters, pass URL directly
         return connect(database_url, autocommit=False)
 
 
-def execute_sql_script(script_path: Path) -> None:
-    sql = script_path.read_text(encoding="utf-8")
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(sql)
-        conn.commit()
-
-
-def fetch_tickets(status_filter: str | None = None) -> list[dict[str, Any]]:
+def fetch_all_tickets() -> list[dict[str, Any]]:
+    """Fetch all tickets ordered by creation date (newest first)."""
     query = """
-        SELECT
-            ticket_id,
-            title,
-            status,
-            priority,
-            created_by,
-            created_at
+        SELECT ticket_id, title, status, created_by, created_at
         FROM tickets
+        ORDER BY created_at DESC
     """
-    params: tuple[Any, ...] = ()
-    if status_filter and status_filter != "all":
-        query += " WHERE status = %s"
-        params = (status_filter,)
-    query += " ORDER BY created_at DESC"
-
     with get_connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        cur.execute(query, params)
+        cur.execute(query)
+        return list(cur.fetchall())
+
+
+def fetch_tickets_by_status(status: str) -> list[dict[str, Any]]:
+    """Fetch tickets filtered by status."""
+    query = """
+        SELECT ticket_id, title, status, created_by, created_at
+        FROM tickets
+        WHERE status = %s
+        ORDER BY created_at DESC
+    """
+    with get_connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(query, (status,))
         return list(cur.fetchall())
 
 
 def fetch_ticket_messages(ticket_id: int) -> list[dict[str, Any]]:
+    """Fetch all messages for a specific ticket."""
     query = """
-        SELECT
-            message_id,
-            ticket_id,
-            message_text,
-            author,
-            created_at
+        SELECT message_id, ticket_id, message_text, author, created_at
         FROM ticket_messages
         WHERE ticket_id = %s
         ORDER BY created_at ASC
@@ -94,34 +73,34 @@ def fetch_ticket_messages(ticket_id: int) -> list[dict[str, Any]]:
         return list(cur.fetchall())
 
 
-def create_ticket(title: str, created_by: str, status: str, priority: str) -> int:
+def create_ticket(title: str, status: str, created_by: str) -> int:
+    """Create a new ticket and return its ID."""
     if not title.strip():
-        raise ValueError("Title is required.")
+        raise ValueError("Title cannot be empty")
     if not created_by.strip():
-        raise ValueError("Created by is required.")
+        raise ValueError("Created by cannot be empty")
     if status not in VALID_STATUSES:
-        raise ValueError(f"Status must be one of: {', '.join(VALID_STATUSES)}")
-    if priority not in VALID_PRIORITIES:
-        raise ValueError(f"Priority must be one of: {', '.join(VALID_PRIORITIES)}")
-
+        raise ValueError(f"Invalid status. Must be one of: {', '.join(VALID_STATUSES)}")
+    
     query = """
-        INSERT INTO tickets (title, status, priority, created_by)
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO tickets (title, status, created_by)
+        VALUES (%s, %s, %s)
         RETURNING ticket_id
     """
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(query, (title.strip(), status, priority, created_by.strip()))
+        cur.execute(query, (title.strip(), status, created_by.strip()))
         ticket_id = cur.fetchone()[0]
         conn.commit()
         return ticket_id
 
 
-def add_ticket_message(ticket_id: int, message_text: str, author: str) -> None:
+def add_message(ticket_id: int, message_text: str, author: str) -> None:
+    """Add a message to an existing ticket."""
     if not message_text.strip():
-        raise ValueError("Message text is required.")
+        raise ValueError("Message cannot be empty")
     if not author.strip():
-        raise ValueError("Author is required.")
-
+        raise ValueError("Author cannot be empty")
+    
     query = """
         INSERT INTO ticket_messages (ticket_id, message_text, author)
         VALUES (%s, %s, %s)
@@ -131,29 +110,18 @@ def add_ticket_message(ticket_id: int, message_text: str, author: str) -> None:
         conn.commit()
 
 
-def update_ticket_status(ticket_id: int, new_status: str) -> None:
-    if new_status not in VALID_STATUSES:
-        raise ValueError(f"Status must be one of: {', '.join(VALID_STATUSES)}")
-
+def get_ticket_stats() -> dict[str, int]:
+    """Get count of tickets by status."""
     query = """
-        UPDATE tickets
-        SET status = %s
-        WHERE ticket_id = %s
-    """
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(query, (new_status, ticket_id))
-        conn.commit()
-
-
-def fetch_ticket_counts() -> dict[str, int]:
-    query = """
-        SELECT status, COUNT(*) AS count
+        SELECT status, COUNT(*) as count
         FROM tickets
         GROUP BY status
     """
-    counts = {"open": 0, "in_progress": 0, "resolved": 0}
+    stats = {status: 0 for status in VALID_STATUSES}
+    
     with get_connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         cur.execute(query)
         for row in cur.fetchall():
-            counts[row["status"]] = row["count"]
-    return counts
+            stats[row["status"]] = row["count"]
+    
+    return stats
